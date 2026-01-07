@@ -148,6 +148,10 @@ For recurring events:
 | Mon/Wed/Fri at 7pm | `0 19 * * 1,3,5` |
 | Daily at 8:30pm | `30 20 * * *` |
 | Weekends at 3pm | `0 15 * * 0,6` |
+| Every quarter past the hour| 15 * * * * |
+
+(If you're having trouble setting up the correct time, you can use a site like this)
+https://crontab.guru/#15_*_*_*_*
 
 ## Development
 

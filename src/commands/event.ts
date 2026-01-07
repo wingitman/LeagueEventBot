@@ -45,6 +45,14 @@ export const eventCommand: Command = {
     )
     .addSubcommand((subcommand) =>
       subcommand
+        .setName("delete")
+        .setDescription("Delete an event by id")
+        .addIntegerOption((option) =>
+          option.setName("id").setDescription("Id of the event").setRequired(true)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
         .setName("create-recurring")
         .setDescription("Create a recurring event")
         .addStringOption((option) =>
@@ -115,6 +123,9 @@ export const eventCommand: Command = {
     switch (subcommand) {
       case "create":
         await handleCreate(interaction);
+        break;
+      case "delete":
+        await handleDelete(interaction);
         break;
       case "create-recurring":
         await handleCreateRecurring(interaction);
@@ -210,6 +221,25 @@ async function handleCreate(interaction: ChatInputCommandInteraction) {
   );
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleDelete(interaction: ChatInputCommandInteraction) {
+  const eventId = interaction.options.getInteger("id", true);
+
+  const event = await eventService.deleteEvent(eventId, interaction.guildId!);
+
+  if (!event) {
+    const embed = buildErrorEmbed("Event Not Found", `No event found with ID ${eventId}`);
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    return;
+  }
+
+  const embed = buildSuccessEmbed(
+    "Event Deleted",
+    `Event **${event.title}** (ID: ${eventId}) has been permanently deleted.`
+  );
+
+  await interaction.reply({ embeds: [embed] });
 }
 
 async function handleCreateRecurring(interaction: ChatInputCommandInteraction) {

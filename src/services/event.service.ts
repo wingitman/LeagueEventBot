@@ -1,11 +1,6 @@
 import { eq, and, desc } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
-import {
-  type LobbyType,
-  LobbyTypes,
-  EventStatus,
-  type EventStatusType,
-} from "../types/index.js";
+import { type LobbyType, LobbyTypes, EventStatus, type EventStatusType } from "../types/index.js";
 import { buildEventEmbed } from "../utils/embeds.js";
 import type { Message, PartialMessage, TextChannel, Client } from "discord.js";
 import { LOBBY_EMOJIS, EVENT_EXPIRY_MS } from "../utils/constants.js";
@@ -51,8 +46,27 @@ export const eventService = {
     return event;
   },
 
-  async deleteEvent(id: number) {
-    const result = await db.delete(schema.events).where(eq(schema.events.guildId, id));
+  /**
+   * Delete an event by ID (must belong to the specified guild)
+   */
+  async deleteEvent(eventId: number, guildId: string) {
+    log.debug(`Deleting event ${eventId} for guild ${guildId}`);
+
+    // First check if event exists and belongs to the guild
+    const event = await this.getEvent(eventId);
+    if (!event || event.guildId !== guildId) {
+      log.debug(`Event ${eventId} not found or does not belong to guild ${guildId}`);
+      return null;
+    }
+
+    // Delete associated signups first
+    await db.delete(schema.eventSignups).where(eq(schema.eventSignups.eventId, eventId));
+
+    // Delete the event
+    await db.delete(schema.events).where(eq(schema.events.id, eventId));
+
+    log.info(`Event ${eventId} "${event.title}" deleted`);
+    return event;
   },
 
   /**
@@ -109,10 +123,7 @@ export const eventService = {
   async getUpcomingEvents(guildId: string) {
     log.debug(`Fetching upcoming events for guild ${guildId}`);
     const events = await db.query.events.findMany({
-      where: and(
-        eq(schema.events.guildId, guildId),
-        eq(schema.events.status, EventStatus.PENDING)
-      ),
+      where: and(eq(schema.events.guildId, guildId), eq(schema.events.status, EventStatus.PENDING)),
       orderBy: [schema.events.scheduledTime],
     });
     log.debug(`Found ${events.length} upcoming events`);
@@ -179,10 +190,7 @@ export const eventService = {
     await db
       .delete(schema.eventSignups)
       .where(
-        and(
-          eq(schema.eventSignups.eventId, eventId),
-          eq(schema.eventSignups.discordId, discordId)
-        )
+        and(eq(schema.eventSignups.eventId, eventId), eq(schema.eventSignups.discordId, discordId))
       );
 
     // Add to new lobby
@@ -205,10 +213,7 @@ export const eventService = {
     await db
       .delete(schema.eventSignups)
       .where(
-        and(
-          eq(schema.eventSignups.eventId, eventId),
-          eq(schema.eventSignups.discordId, discordId)
-        )
+        and(eq(schema.eventSignups.eventId, eventId), eq(schema.eventSignups.discordId, discordId))
       );
 
     log.info(`Player ${discordId} removed from event ${eventId}`);
