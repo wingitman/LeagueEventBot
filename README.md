@@ -1,16 +1,20 @@
-# Discord League Bot
+# LeagueEventBot
 
-A Discord bot for managing game lobbies with rank-based restrictions and automatic team balancing. Built for VR gaming communities that need fair matchmaking without a dedicated system.
+A Discord bot for scheduling and managing events with optional rank-based team balancing. Originally built for VR gaming communities, now suitable for any group that needs flexible event scheduling with lobby sign-ups.
 
 ## Features
 
-- **Three Lobby Types**: Competitive 4v4, Casual 4v4, and Open 5v5
+- **General Event Scheduling**: Create one-off or recurring events with flexible time/date options
+- **Three Arenas**: Arena 1, Arena 2, and Arena 3 — each with configurable player caps and emoji reactions
+- **Reaction-Based Sign-up**: Players join arenas by clicking emoji reactions on the event embed
+- **Optional Team Balancing**: Per-event toggle to automatically generate balanced teams at start time using a greedy rank-point algorithm
+- **Player Pings at Start**: Each arena's signed-up players are individually pinged when the event starts
+- **Start Messages**: Attach a public message to event start pings, and/or a separate internal message sent to an admin channel
+- **Per-Event Emoji Overrides**: Override the default reaction emoji for any arena when creating an event
+- **Recurring Events**: Schedule repeating events using cron expressions; all settings carry forward automatically
 - **Rank System**: 8 ranks from Bronze to Master with point-based balancing
-- **Rank Restrictions**: Casual lobbies restricted to Gold+ and below (with whitelist override)
-- **Team Balancing**: Automatic balanced team suggestions using greedy algorithm
-- **Reaction-Based Signup**: Players join lobbies by clicking emoji reactions
-- **Recurring Events**: Schedule automatic game nights with cron expressions
-- **Admin Controls**: Manage players, ranks, whitelist/blocklist, and configuration
+- **Rank Restrictions**: Arena 2 restricted to Gold and below (with per-player whitelist override)
+- **Admin Controls**: Manage players, ranks, whitelist/blocklist, and bot configuration
 
 ## Quick Start
 
@@ -22,22 +26,26 @@ A Discord bot for managing game lobbies with rank-based restrictions and automat
 ### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone <your-repo-url>
-   cd discord-league-bot
+   cd LeagueEventBot
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
 
 3. Create your `.env` file:
+
    ```bash
    cp .env.example .env
    ```
 
 4. Edit `.env` with your credentials:
+
    ```env
    DISCORD_TOKEN=your_bot_token_here
    DISCORD_CLIENT_ID=your_client_id_here
@@ -45,6 +53,7 @@ A Discord bot for managing game lobbies with rank-based restrictions and automat
    ```
 
 5. Run database migrations:
+
    ```bash
    npm run db:migrate
    ```
@@ -65,93 +74,135 @@ A Discord bot for managing game lobbies with rank-based restrictions and automat
    ```
 
 Or build manually:
+
 ```bash
-docker build -t discord-league-bot .
+docker build -t leagueeventbot .
 docker run -d \
   -e DISCORD_TOKEN=your_token \
   -e DISCORD_CLIENT_ID=your_client_id \
   -e GUILD_ID=your_guild_id \
   -v bot-data:/app/data \
-  discord-league-bot
+  leagueeventbot
 ```
 
 ## Commands
 
 ### Player Commands
 
-| Command | Description |
-|---------|-------------|
+| Command        | Description                             |
+| -------------- | --------------------------------------- |
 | `/rank [user]` | View your rank or another player's rank |
 
 ### Admin Commands
 
-#### Player Management
-| Command | Description |
-|---------|-------------|
-| `/player setrank <user> <rank>` | Set a player's rank |
-| `/player whitelist <user>` | Allow high-rank player to join Casual |
-| `/player unwhitelist <user>` | Remove whitelist privilege |
-| `/player block <user> <lobby>` | Block player from a lobby type |
-| `/player unblock <user> <lobby>` | Remove block |
-| `/player info <user>` | View detailed player info |
-
 #### Event Management
-| Command | Description |
-|---------|-------------|
-| `/event create <time> [title] [date]` | Create a one-off event |
-| `/event recurring <cron> <title>` | Create a recurring event |
-| `/event list` | List upcoming events |
-| `/event cancel <id>` | Cancel an event |
-| `/event kick <id> <user>` | Kick player from event |
-| `/event balance <id> <lobby>` | Manually trigger team balance |
-| `/event recurring-list` | List recurring events |
-| `/event recurring-cancel <id>` | Cancel recurring event |
+
+| Command                          | Description                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------- |
+| `/event create <time> [options]` | Create a new event (see options below)                                                |
+| `/event delete <id>`             | Permanently delete an event by ID                                                     |
+| `/event delete-all <status>`     | Delete all events with a given status (`pending`, `active`, `completed`, `cancelled`) |
+| `/event list`                    | List upcoming and recent events                                                       |
+| `/event cancel <id>`             | Cancel an event and stop any recurrence                                               |
+| `/event kick <id> <user>`        | Remove a player from an event                                                         |
+| `/event balance <id> <arena>`    | Manually trigger team balancing for an arena                                          |
+| `/event trigger <id>`            | Manually start an event (for testing)                                                 |
+
+##### `/event create` options
+
+| Option             | Type    | Required | Description                                               |
+| ------------------ | ------- | -------- | --------------------------------------------------------- |
+| `time`             | string  | Yes      | Event time, e.g. `8:00pm` or `20:00`                      |
+| `title`            | string  | No       | Event title (defaults to `Game Night`)                    |
+| `date`             | string  | No       | Event date, e.g. `2025-12-25` or `tomorrow`               |
+| `balance-teams`    | boolean | No       | Automatically balance teams when the event starts         |
+| `recurring`        | boolean | No       | Make this a recurring event                               |
+| `cron`             | string  | No       | Cron schedule for recurring events, e.g. `0 20 * * 5`     |
+| `start-message`    | string  | No       | Message appended to each arena ping when the event starts |
+| `internal-message` | string  | No       | Admin-only message sent to a separate channel at start    |
+| `internal-channel` | channel | No       | Channel to send the internal start message to             |
+| `emoji-arena1`     | string  | No       | Override the reaction emoji for Arena 1                   |
+| `emoji-arena2`     | string  | No       | Override the reaction emoji for Arena 2                   |
+| `emoji-arena3`     | string  | No       | Override the reaction emoji for Arena 3                   |
+
+#### Player Management
+
+| Command                          | Description                              |
+| -------------------------------- | ---------------------------------------- |
+| `/player setrank <user> <rank>`  | Set a player's rank                      |
+| `/player whitelist <user>`       | Allow a high-rank player to join Arena 2 |
+| `/player unwhitelist <user>`     | Remove whitelist privilege               |
+| `/player block <user> <arena>`   | Block a player from an arena             |
+| `/player unblock <user> <arena>` | Remove a block                           |
+| `/player info <user>`            | View detailed player info                |
 
 #### Bot Configuration
-| Command | Description |
-|---------|-------------|
-| `/config channel <channel>` | Set event posting channel |
-| `/config pingrole <role>` | Set role to ping for events |
-| `/config adminrole <role>` | Set bot admin role |
-| `/config view` | View current configuration |
+
+| Command                     | Description                                   |
+| --------------------------- | --------------------------------------------- |
+| `/config channel <channel>` | Set the channel where event embeds are posted |
+| `/config pingrole <role>`   | Set the role to ping for new events           |
+| `/config adminrole <role>`  | Set the role that can manage the bot          |
+| `/config view`              | View current configuration                    |
+
+## Arenas
+
+| Arena   | Default Emoji | Max Players | Notes                                              |
+| ------- | ------------- | ----------- | -------------------------------------------------- |
+| Arena 1 | ✅            | 4v4         | No rank restriction                                |
+| Arena 2 | 🥏            | 5v5         | Gold and below only (whitelist override available) |
+| Arena 3 | 🎯            | 2v2         | No rank restriction                                |
+
+Default emojis can be changed globally in `src/utils/constants.ts`, or overridden per event via the `emoji-arena1/2/3` options on `/event create`.
 
 ## Rank System
 
-| Rank | Points | Can Join Casual |
-|------|--------|-----------------|
-| Bronze | 1 | Yes |
-| Silver | 2 | Yes |
-| Silver+ | 3 | Yes |
-| Gold | 4 | Yes |
-| Gold+ | 5 | Yes |
-| Diamond | 6 | No* |
-| Diamond+ | 7 | No* |
-| Master | 8 | No* |
+| Rank     | Points | Can Join Arena 2 |
+| -------- | ------ | ---------------- |
+| Bronze   | 1      | Yes              |
+| Silver   | 2      | Yes              |
+| Silver+  | 3      | Yes              |
+| Gold     | 4      | Yes              |
+| Gold+    | 5      | Yes              |
+| Diamond  | 6      | No\*             |
+| Diamond+ | 7      | No\*             |
+| Master   | 8      | No\*             |
 
-*Unless whitelisted by an admin
+\*Unless whitelisted by an admin via `/player whitelist`
 
 ## Event Flow
 
 1. **Admin creates event**: `/event create 8:00pm "Friday Game Night"`
-2. **Bot posts embed** with three lobby options and reaction emojis
-3. **Players click reactions** to join lobbies (rank restrictions enforced)
-4. **At event time**: Bot automatically posts balanced teams for each lobby
-5. **2 hours later**: Event auto-expires
+2. **Bot posts embed** in the configured event channel with arena options and reaction emojis
+3. **Players click reactions** to join arenas (rank restrictions enforced for Arena 2)
+4. **At event time**:
+   - Each arena with sign-ups sends a ping listing all signed-up players
+   - If `start-message` was set, it is appended to each arena ping
+   - If `internal-message` and `internal-channel` were set, the internal message is sent there
+   - If `balance-teams` was enabled, balanced team suggestions are posted for each arena
+   - If no one signed up, a single "no one signed up" message is sent instead
+5. **2 hours later**: Event auto-expires; recurring events automatically schedule the next instance
 
-## Cron Schedule Examples
+## Recurring Events
 
-For recurring events:
+Pass `recurring:True` and a `cron` schedule when creating an event:
 
-| Schedule | Cron Expression |
-|----------|-----------------|
-| Fridays at 8pm | `0 20 * * 5` |
+```
+/event create time:8:00pm title:Friday Game Night recurring:True cron:0 20 * * 5
+```
+
+When a recurring event expires, the next instance is created automatically with all the same settings (title, balance-teams, messages, emoji overrides, etc.).
+
+### Cron Schedule Examples
+
+| Schedule           | Cron Expression  |
+| ------------------ | ---------------- |
+| Fridays at 8pm     | `0 20 * * 5`     |
 | Mon/Wed/Fri at 7pm | `0 19 * * 1,3,5` |
-| Daily at 8:30pm | `30 20 * * *` |
-| Weekends at 3pm | `0 15 * * 0,6` |
-| Every quarter past the hour| 15 * * * * |
+| Daily at 8:30pm    | `30 20 * * *`    |
+| Weekends at 3pm    | `0 15 * * 0,6`   |
 
-(If you're having trouble setting up the correct time, you can use a site like this)
-https://crontab.guru/#15_*_*_*_*
+Use [crontab.guru](https://crontab.guru) to validate expressions.
 
 ## Development
 
@@ -185,7 +236,7 @@ npm run format
 
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
 2. Create a new application
-3. Go to "Bot" section and create a bot
+3. Go to "Bot" and create a bot
 4. Copy the token to your `.env` file
 5. Enable these intents:
    - Server Members Intent
@@ -198,10 +249,10 @@ npm run format
    - Add Reactions
    - Manage Messages
    - Read Message History
+   - Use External Emojis
    - Use Slash Commands
-9. Use generated URL to invite bot to your server
+9. Use the generated URL to invite the bot to your server
 
 ## License
 
 MIT
-# LeagueEventBot
