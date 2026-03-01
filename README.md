@@ -1,10 +1,10 @@
 # LeagueEventBot
 
-A Discord bot for scheduling and managing events with optional rank-based team balancing. Originally built for VR gaming communities, now suitable for any group that needs flexible event scheduling with lobby sign-ups.
+A Discord bot for scheduling and managing events with optional rank-based team balancing.
 
 ## Features
 
-- **General Event Scheduling**: Create one-off or recurring events with flexible time/date options
+- **General Event Scheduling**: Create one-off or recurring events with flexible time/date/cron options
 - **Three Arenas**: Arena 1, Arena 2, and Arena 3 — each with configurable player caps and emoji reactions
 - **Reaction-Based Sign-up**: Players join arenas by clicking emoji reactions on the event embed
 - **Optional Team Balancing**: Per-event toggle to automatically generate balanced teams at start time using a greedy rank-point algorithm
@@ -13,7 +13,7 @@ A Discord bot for scheduling and managing events with optional rank-based team b
 - **Per-Event Emoji Overrides**: Override the default reaction emoji for any arena when creating an event
 - **Recurring Events**: Schedule repeating events using cron expressions; all settings carry forward automatically
 - **Rank System**: 8 ranks from Bronze to Master with point-based balancing
-- **Rank Restrictions**: Arena 2 restricted to Gold and below (with per-player whitelist override)
+- **Rank Restrictions**: Arena 2 can be restricted to with a certain rank (with per-player whitelist override)
 - **Admin Controls**: Manage players, ranks, whitelist/blocklist, and bot configuration
 
 ## Quick Start
@@ -28,7 +28,7 @@ A Discord bot for scheduling and managing events with optional rank-based team b
 1. Clone the repository:
 
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/wingitman/leagueeventbot
    cd LeagueEventBot
    ```
 

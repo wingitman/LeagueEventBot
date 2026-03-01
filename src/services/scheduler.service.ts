@@ -188,7 +188,7 @@ async function startEvent(eventId: number, collector?: LogCollector) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logMsg("error", `Failed to send "no signups" message: ${errorMsg}`);
     }
-  } else {
+  } else if (event.balanceTeams !== true) {
     for (const lobbyType of Object.values(LobbyTypes)) {
       const players = signups[lobbyType as LobbyType];
       if (players.length === 0) continue;
@@ -323,9 +323,9 @@ export async function triggerBalance(
   | null
   | { error: string }
   | {
-      teams: Awaited<ReturnType<typeof balanceService.balanceTeams>>;
-      event: NonNullable<Awaited<ReturnType<typeof eventService.getEvent>>>;
-    }
+    teams: Awaited<ReturnType<typeof balanceService.balanceTeams>>;
+    event: NonNullable<Awaited<ReturnType<typeof eventService.getEvent>>>;
+  }
 > {
   log.debug(`Triggering balance for event ${eventId}, lobby ${lobbyType}`);
 
