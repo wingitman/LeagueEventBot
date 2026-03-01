@@ -1,0 +1,1 @@
+ALTER TABLE `events` ADD `balance_teams` integer DEFAULT false NOT NULL;

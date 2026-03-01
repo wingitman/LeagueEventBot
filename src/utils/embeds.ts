@@ -7,7 +7,7 @@ import {
   RankDisplayNames,
   type Rank,
 } from "../types/index.js";
-import { EMBED_COLORS, LOBBY_TO_EMOJI } from "./constants.js";
+import { EMBED_COLORS, resolveEventEmoji } from "./constants.js";
 import type { Event } from "../db/schema.js";
 
 /**
@@ -38,10 +38,11 @@ export async function buildEventEmbed(
       playerList = players.map((id) => `<@${id}>`).join("\n");
     }
 
-    // Add restriction note for casual
-    let lobbyName = `${config.emoji} ${config.name} (${players.length}/${maxPlayers})`;
-    if (lobbyType === LobbyTypes.CASUAL) {
-      lobbyName += "\n🔒Upto *Gold* rnak";
+    // Add restriction note for arena2
+    const lobbyEmoji = resolveEventEmoji(lobbyType, event);
+    let lobbyName = `${lobbyEmoji} ${config.name} (${players.length}/${maxPlayers})`;
+    if (lobbyType === LobbyTypes.ARENA2 && event.balanceTeams) {
+      lobbyName += "\n🔒Upto *Gold* rank";
     }
 
     embed.addFields({
@@ -53,7 +54,7 @@ export async function buildEventEmbed(
 
   // Add footer with instructions
   embed.setFooter({
-    text: "React to join! ⚔️ Competitive | 🎯 Casual | 🎪 Open",
+    text: "React to join an event!",
   });
 
   return embed;
@@ -68,7 +69,7 @@ export function buildBalancedTeamsEmbed(
   eventTitle: string
 ): EmbedBuilder {
   const config = LobbyConfig[lobbyType];
-  const emoji = LOBBY_TO_EMOJI[lobbyType];
+  const emoji = resolveEventEmoji(lobbyType);
 
   const embed = new EmbedBuilder()
     .setTitle(`${emoji} ${config.name.toUpperCase()} - BALANCED TEAMS`)
@@ -113,7 +114,7 @@ export function buildNeedPlayersEmbed(
   teams?: BalancedTeams
 ): EmbedBuilder {
   const config = LobbyConfig[lobbyType];
-  const emoji = LOBBY_TO_EMOJI[lobbyType];
+  const emoji = resolveEventEmoji(lobbyType);
 
   const embed = new EmbedBuilder()
     .setTitle(`⚠️ NEED ${neededCount} MORE PLAYER${neededCount > 1 ? "S" : ""}`)

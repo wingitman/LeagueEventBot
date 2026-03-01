@@ -3,7 +3,7 @@ import { db, schema } from "../db/index.js";
 import { type LobbyType, LobbyTypes, EventStatus, type EventStatusType } from "../types/index.js";
 import { buildEventEmbed } from "../utils/embeds.js";
 import type { Message, PartialMessage, TextChannel, Client } from "discord.js";
-import { LOBBY_EMOJIS, EVENT_EXPIRY_MS } from "../utils/constants.js";
+import { resolveEventEmoji, emojiToReactString, EVENT_EXPIRY_MS } from "../utils/constants.js";
 import { CronExpressionParser } from "cron-parser";
 import { createLogger } from "../utils/logger.js";
 
@@ -21,6 +21,13 @@ export const eventService = {
     isRecurring?: boolean;
     cronSchedule?: string;
     pingRoleId?: string | null;
+    balanceTeams?: boolean;
+    startMessage?: string | null;
+    internalStartMessage?: string | null;
+    internalStartChannelId?: string | null;
+    emojiArena1?: string | null;
+    emojiArena2?: string | null;
+    emojiArena3?: string | null;
   }) {
     log.debug(`Creating event: "${data.title}" for guild ${data.guildId}`);
 
@@ -34,6 +41,13 @@ export const eventService = {
         isRecurring: data.isRecurring || false,
         cronSchedule: data.cronSchedule,
         pingRoleId: data.pingRoleId,
+        balanceTeams: data.balanceTeams ?? false,
+        startMessage: data.startMessage ?? null,
+        internalStartMessage: data.internalStartMessage ?? null,
+        internalStartChannelId: data.internalStartChannelId ?? null,
+        emojiArena1: data.emojiArena1 ?? null,
+        emojiArena2: data.emojiArena2 ?? null,
+        emojiArena3: data.emojiArena3 ?? null,
         status: EventStatus.PENDING,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -149,9 +163,9 @@ export const eventService = {
     const signups = await this.getEventSignups(eventId);
 
     const grouped: Record<LobbyType, string[]> = {
-      [LobbyTypes.COMPETITIVE]: [],
-      [LobbyTypes.CASUAL]: [],
-      [LobbyTypes.OPEN]: [],
+      [LobbyTypes.ARENA1]: [],
+      [LobbyTypes.ARENA2]: [],
+      [LobbyTypes.ARENA3]: [],
     };
 
     for (const signup of signups) {
@@ -162,7 +176,7 @@ export const eventService = {
     }
 
     log.debug(
-      `Signups by lobby for event ${eventId}: Competitive=${grouped[LobbyTypes.COMPETITIVE].length}, Casual=${grouped[LobbyTypes.CASUAL].length}, Open=${grouped[LobbyTypes.OPEN].length}`
+      `Signups by lobby for event ${eventId}: Arena1=${grouped[LobbyTypes.ARENA1].length}, Arena2=${grouped[LobbyTypes.ARENA2].length}, Arena3=${grouped[LobbyTypes.ARENA3].length}`
     );
 
     return grouped;
@@ -286,9 +300,9 @@ export const eventService = {
         embeds: [embed],
       });
 
-      // Add lobby reaction emojis
-      for (const emoji of LOBBY_EMOJIS) {
-        await message.react(emoji);
+      // Add lobby reaction emojis (use per-event overrides where set)
+      for (const lt of Object.values(LobbyTypes)) {
+        await message.react(emojiToReactString(resolveEventEmoji(lt, event)));
       }
 
       // Save message ID
@@ -376,6 +390,31 @@ export const eventService = {
       orderBy: [desc(schema.events.createdAt)],
       limit,
     });
+  },
+
+  /**
+   * Delete all events for a guild matching a given status
+   * Returns the count of deleted events
+   */
+  async deleteAllEvents(guildId: string, status: EventStatusType): Promise<number> {
+    log.debug(`Deleting all ${status} events for guild ${guildId}`);
+
+    const matching = await db.query.events.findMany({
+      where: and(eq(schema.events.guildId, guildId), eq(schema.events.status, status)),
+    });
+
+    if (matching.length === 0) {
+      log.debug(`No ${status} events found for guild ${guildId}`);
+      return 0;
+    }
+
+    const ids = matching.map((e) => e.id);
+    for (const id of ids) {
+      await db.delete(schema.events).where(eq(schema.events.id, id));
+    }
+
+    log.info(`Deleted ${matching.length} ${status} event(s) for guild ${guildId}`);
+    return matching.length;
   },
 
   /**

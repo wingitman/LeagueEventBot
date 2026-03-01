@@ -1,5 +1,6 @@
 import {
   SlashCommandBuilder,
+  ChannelType,
   type ChatInputCommandInteraction,
   type TextChannel,
 } from "discord.js";
@@ -8,15 +9,15 @@ import { configService } from "../services/config.service.js";
 import { buildSuccessEmbed, buildErrorEmbed, buildBalancedTeamsEmbed } from "../utils/embeds.js";
 import { isAdmin, denyPermission } from "../utils/permissions.js";
 import { triggerBalance, startEventManually } from "../services/scheduler.service.js";
-import { type LobbyType, LobbyTypes } from "../types/index.js";
+import { type LobbyType, LobbyTypes, type EventStatusType } from "../types/index.js";
 import { isDebugEnabled } from "../utils/logger.js";
 import cron from "node-cron";
 import type { Command } from "./index.js";
 
 const lobbyChoices = [
-  { name: "Competitive", value: LobbyTypes.COMPETITIVE },
-  { name: "Casual", value: LobbyTypes.CASUAL },
-  { name: "Open", value: LobbyTypes.OPEN },
+  { name: "Arena 1", value: LobbyTypes.ARENA1 },
+  { name: "Arena 2", value: LobbyTypes.ARENA2 },
+  { name: "Arena 3", value: LobbyTypes.ARENA3 },
 ];
 
 export const eventCommand: Command = {
@@ -26,7 +27,7 @@ export const eventCommand: Command = {
     .addSubcommand((subcommand) =>
       subcommand
         .setName("create")
-        .setDescription("Create a new one-off event")
+        .setDescription("Create a new event")
         .addStringOption((option) =>
           option
             .setName("time")
@@ -42,6 +43,63 @@ export const eventCommand: Command = {
             .setDescription("Event date (e.g., 2024-12-25, tomorrow)")
             .setRequired(false)
         )
+        .addBooleanOption((option) =>
+          option
+            .setName("balance-teams")
+            .setDescription("Automatically balance teams when the event starts")
+            .setRequired(false)
+        )
+        .addBooleanOption((option) =>
+          option
+            .setName("recurring")
+            .setDescription("Make this a recurring event")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("cron")
+            .setDescription(
+              "Cron schedule for recurring events (e.g., '0 20 * * 5' for Fridays at 8pm)"
+            )
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("start-message")
+            .setDescription("Message appended to each lobby ping when the event starts")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("internal-message")
+            .setDescription("Admin message sent to the internal channel when the event starts")
+            .setRequired(false)
+        )
+        .addChannelOption((option) =>
+          option
+            .setName("internal-channel")
+            .setDescription("Channel to send the internal start message to")
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("emoji-arena1")
+            .setDescription("Override the reaction emoji for Arena 1 (e.g. <:myemoji:123>)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("emoji-arena2")
+            .setDescription("Override the reaction emoji for Arena 2 (e.g. <:myemoji:123>)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("emoji-arena3")
+            .setDescription("Override the reaction emoji for Arena 3 (e.g. <:myemoji:123>)")
+            .setRequired(false)
+        )
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -53,16 +111,19 @@ export const eventCommand: Command = {
     )
     .addSubcommand((subcommand) =>
       subcommand
-        .setName("create-recurring")
-        .setDescription("Create a recurring event")
+        .setName("delete-all")
+        .setDescription("Delete all events with a given status")
         .addStringOption((option) =>
           option
-            .setName("cron")
-            .setDescription("Cron schedule (e.g., '0 20 * * 5' for Fridays at 8pm)")
+            .setName("status")
+            .setDescription("Status of events to delete")
             .setRequired(true)
-        )
-        .addStringOption((option) =>
-          option.setName("title").setDescription("Event title").setRequired(true)
+            .addChoices(
+              { name: "Pending", value: "pending" },
+              { name: "Active", value: "active" },
+              { name: "Completed", value: "completed" },
+              { name: "Cancelled", value: "cancelled" }
+            )
         )
     )
     .addSubcommand((subcommand) =>
@@ -127,8 +188,8 @@ export const eventCommand: Command = {
       case "delete":
         await handleDelete(interaction);
         break;
-      case "create-recurring":
-        await handleCreateRecurring(interaction);
+      case "delete-all":
+        await handleDeleteAll(interaction);
         break;
       case "list":
         await handleList(interaction);
@@ -193,32 +254,78 @@ async function handleCreate(interaction: ChatInputCommandInteraction) {
   const timeStr = interaction.options.getString("time", true);
   const title = interaction.options.getString("title") || "Game Night";
   const dateStr = interaction.options.getString("date");
+  const balanceTeams = interaction.options.getBoolean("balance-teams") ?? false;
+  const recurring = interaction.options.getBoolean("recurring") ?? false;
+  const cronSchedule = interaction.options.getString("cron");
+  const startMessage = interaction.options.getString("start-message");
+  const internalMessage = interaction.options.getString("internal-message");
+  const internalChannel = interaction.options.getChannel("internal-channel");
+  const emojiArena1 = interaction.options.getString("emoji-arena1");
+  const emojiArena2 = interaction.options.getString("emoji-arena2");
+  const emojiArena3 = interaction.options.getString("emoji-arena3");
+
+  // Validate recurring options
+  if (recurring && !cronSchedule) {
+    const embed = buildErrorEmbed(
+      "Missing Cron Schedule",
+      `A cron schedule is required for recurring events.\n\nExamples:\n- \`0 20 * * 5\` - Fridays at 8pm\n- \`0 19 * * 1,3,5\` - Mon/Wed/Fri at 7pm\n- \`30 20 * * *\` - Daily at 8:30pm`
+    );
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    return;
+  }
+
+  if (cronSchedule && !cron.validate(cronSchedule)) {
+    const embed = buildErrorEmbed(
+      "Invalid Cron Expression",
+      `The cron expression "${cronSchedule}" is not valid.\n\nExamples:\n- \`0 20 * * 5\` - Fridays at 8pm\n- \`0 19 * * 1,3,5\` - Mon/Wed/Fri at 7pm\n- \`30 20 * * *\` - Daily at 8:30pm`
+    );
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    return;
+  }
 
   // Get configured channel or use current
   const guildConfig = await configService.getConfig(interaction.guildId!);
   const channelId = guildConfig?.eventChannelId || interaction.channelId;
   const pingRoleId = guildConfig?.pingRoleId;
 
-  const scheduledTime = parseTime(timeStr, dateStr);
+  // For recurring events use the next cron occurrence; otherwise parse the provided time
+  const scheduledTime =
+    recurring && cronSchedule
+      ? eventService.getNextCronDate(cronSchedule)
+      : parseTime(timeStr, dateStr);
 
-  // Create event (one-off, not recurring)
+  // Create event
   const event = await eventService.createEvent({
     guildId: interaction.guildId!,
     channelId,
     title,
     scheduledTime,
-    isRecurring: false,
+    isRecurring: recurring,
+    cronSchedule: cronSchedule ?? undefined,
     pingRoleId,
+    balanceTeams,
+    startMessage,
+    internalStartMessage: internalMessage,
+    internalStartChannelId: internalChannel?.id ?? null,
+    emojiArena1,
+    emojiArena2,
+    emojiArena3,
   });
 
   // Post event embed
   await eventService.postEventEmbed(interaction.client, event.id, channelId, pingRoleId);
 
   const timestamp = Math.floor(scheduledTime.getTime() / 1000);
-  const embed = buildSuccessEmbed(
-    "Event Created",
-    `**${title}** has been scheduled for <t:${timestamp}:F>\n\nEvent ID: ${event.id}`
-  );
+
+  const embed = recurring
+    ? buildSuccessEmbed(
+        "Recurring Event Created",
+        `**${title}** signup is now open!\n\nFirst occurrence: <t:${timestamp}:F> (<t:${timestamp}:R>)\nTeam balancing: ${balanceTeams ? "enabled" : "disabled"}\n\nEvent ID: ${event.id}`
+      )
+    : buildSuccessEmbed(
+        "Event Created",
+        `**${title}** has been scheduled for <t:${timestamp}:F>\nTeam balancing: ${balanceTeams ? "enabled" : "disabled"}\n\nEvent ID: ${event.id}`
+      );
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }
@@ -242,46 +349,14 @@ async function handleDelete(interaction: ChatInputCommandInteraction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-async function handleCreateRecurring(interaction: ChatInputCommandInteraction) {
-  const cronSchedule = interaction.options.getString("cron", true);
-  const title = interaction.options.getString("title", true);
+async function handleDeleteAll(interaction: ChatInputCommandInteraction) {
+  const status = interaction.options.getString("status", true) as EventStatusType;
 
-  // Validate cron expression
-  if (!cron.validate(cronSchedule)) {
-    const embed = buildErrorEmbed(
-      "Invalid Cron Expression",
-      `The cron expression "${cronSchedule}" is not valid.\n\nExamples:\n- \`0 20 * * 5\` - Fridays at 8pm\n- \`0 19 * * 1,3,5\` - Mon/Wed/Fri at 7pm\n- \`30 20 * * *\` - Daily at 8:30pm`
-    );
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-    return;
-  }
+  const count = await eventService.deleteAllEvents(interaction.guildId!, status);
 
-  // Get configured channel or use current
-  const guildConfig = await configService.getConfig(interaction.guildId!);
-  const channelId = guildConfig?.eventChannelId || interaction.channelId;
-  const pingRoleId = guildConfig?.pingRoleId;
-
-  // Calculate the next scheduled time from the cron expression
-  const nextScheduledTime = eventService.getNextCronDate(cronSchedule);
-
-  // Create recurring event
-  const event = await eventService.createEvent({
-    guildId: interaction.guildId!,
-    channelId,
-    title,
-    scheduledTime: nextScheduledTime,
-    isRecurring: true,
-    cronSchedule,
-    pingRoleId,
-  });
-
-  // Post the signup embed immediately
-  await eventService.postEventEmbed(interaction.client, event.id, channelId, pingRoleId);
-
-  const timestamp = Math.floor(nextScheduledTime.getTime() / 1000);
   const embed = buildSuccessEmbed(
-    "Recurring Event Created",
-    `**${title}** signup is now open!\n\nGame starts: <t:${timestamp}:F> (<t:${timestamp}:R>)\n\nEvent ID: ${event.id}`
+    "Events Deleted",
+    `Deleted **${count}** ${status} event${count === 1 ? "" : "s"}.`
   );
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -413,7 +488,8 @@ async function handleTrigger(interaction: ChatInputCommandInteraction) {
   const event = await eventService.getEvent(eventId);
 
   // Build success message with logs if debug mode enabled
-  let description = `**${event?.title}** has been manually started. Signups are now closed and teams have been balanced.`;
+  const balanceNote = event?.balanceTeams ? " Teams have been balanced." : "";
+  let description = `**${event?.title}** has been manually started. Signups are now closed.${balanceNote}`;
   if (result.logs && result.logs.length > 0 && isDebugEnabled()) {
     description += `\n\n**Debug Logs:**\n\`\`\`\n${result.logs.join("\n")}\n\`\`\``;
   }

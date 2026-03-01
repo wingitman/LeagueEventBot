@@ -8,6 +8,27 @@
       "when": 1767732829721,
       "tag": "0000_hesitant_lester",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1772375453173,
+      "tag": "0001_lumpy_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772376898209,
+      "tag": "0002_volatile_dust",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1772378433497,
+      "tag": "0003_magical_the_twelve",
+      "breakpoints": true
     }
   ]
 }

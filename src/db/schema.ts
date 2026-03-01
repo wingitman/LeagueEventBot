@@ -38,8 +38,15 @@ export const events = sqliteTable("events", {
   scheduledTime: integer("scheduled_time", { mode: "timestamp_ms" }).notNull(),
   status: text("status").notNull().default("pending"), // pending, active, completed, cancelled
   isRecurring: integer("is_recurring", { mode: "boolean" }).notNull().default(false),
+  balanceTeams: integer("balance_teams", { mode: "boolean" }).notNull().default(false),
   cronSchedule: text("cron_schedule"), // Only set if isRecurring is true
   pingRoleId: text("ping_role_id"), // Role to ping for this event
+  startMessage: text("start_message"), // Optional message appended to lobby pings when event starts
+  internalStartMessage: text("internal_start_message"), // Optional message sent to internal channel on start
+  internalStartChannelId: text("internal_start_channel_id"), // Channel for internalStartMessage
+  emojiArena1: text("emoji_arena1"), // Per-event emoji override for Arena 1
+  emojiArena2: text("emoji_arena2"), // Per-event emoji override for Arena 2
+  emojiArena3: text("emoji_arena3"), // Per-event emoji override for Arena 3
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),

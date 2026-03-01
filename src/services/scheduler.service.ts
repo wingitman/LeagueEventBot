@@ -73,6 +73,13 @@ async function createNextInstance(expiredEvent: {
   title: string;
   cronSchedule: string | null;
   pingRoleId: string | null;
+  balanceTeams: boolean;
+  startMessage: string | null;
+  internalStartMessage: string | null;
+  internalStartChannelId: string | null;
+  emojiArena1: string | null;
+  emojiArena2: string | null;
+  emojiArena3: string | null;
 }) {
   if (!expiredEvent.cronSchedule) {
     log.warn("Cannot create next instance: no cron schedule");
@@ -92,6 +99,13 @@ async function createNextInstance(expiredEvent: {
     isRecurring: true,
     cronSchedule: expiredEvent.cronSchedule,
     pingRoleId: expiredEvent.pingRoleId,
+    balanceTeams: expiredEvent.balanceTeams,
+    startMessage: expiredEvent.startMessage,
+    internalStartMessage: expiredEvent.internalStartMessage,
+    internalStartChannelId: expiredEvent.internalStartChannelId,
+    emojiArena1: expiredEvent.emojiArena1,
+    emojiArena2: expiredEvent.emojiArena2,
+    emojiArena3: expiredEvent.emojiArena3,
   });
 
   // Post the signup embed
@@ -144,7 +158,7 @@ async function startEvent(eventId: number, collector?: LogCollector) {
   logMsg("debug", `Signups retrieved: ${totalSignups} total players`);
   logMsg(
     "debug",
-    `Competitive: ${signups[LobbyTypes.COMPETITIVE].length}, Casual: ${signups[LobbyTypes.CASUAL].length}, Open: ${signups[LobbyTypes.OPEN].length}`
+    `Arena1: ${signups[LobbyTypes.ARENA1].length}, Arena2: ${signups[LobbyTypes.ARENA2].length}, Arena3: ${signups[LobbyTypes.ARENA3].length}`
   );
 
   // Get channel with error handling
@@ -164,71 +178,110 @@ async function startEvent(eventId: number, collector?: LogCollector) {
   }
   logMsg("debug", `Channel fetched: #${channel.name} (${channel.id})`);
 
-  // Get config for ping role (use event's pingRoleId or fall back to guild config)
-  const pingRoleId =
-    event.pingRoleId || (await configService.getConfig(event.guildId))?.pingRoleId;
-  logMsg("debug", `Ping role: ${pingRoleId || "none"}`);
-
-  // Post "game starting" message with error handling
-  const pingContent = pingRoleId ? `<@&${pingRoleId}>` : "";
-  try {
-    await channel.send(`${pingContent} **${event.title}** is starting now!`);
-    logMsg("debug", '"Game starting" message sent successfully');
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    logMsg("error", `Failed to send "game starting" message: ${errorMsg}`);
-    return;
-  }
-
-  // Balance and post teams for each lobby with players
-  for (const lobbyType of Object.values(LobbyTypes)) {
-    const players = signups[lobbyType as LobbyType];
-    if (players.length === 0) {
-      logMsg("debug", `${lobbyType} lobby: no players, skipping`);
-      continue;
-    }
-
-    logMsg("debug", `Processing ${lobbyType} lobby with ${players.length} players`);
-
+  // Post per-lobby player pings, or a "no one signed up" message if all lobbies are empty
+  const totalSignupsCount = Object.values(signups).flat().length;
+  if (totalSignupsCount === 0) {
+    logMsg("debug", "No signups — sending 'no one signed up' message");
     try {
-      const config = LobbyConfig[lobbyType as LobbyType];
-      const teams = await balanceService.balanceTeams(players);
-      logMsg("debug", `${lobbyType} teams balanced successfully`);
-
-      // Check if we have enough/even players
-      const playersNeeded = balanceService.getPlayersNeeded(players.length, config.maxPlayersPerTeam);
-      logMsg("debug", `${lobbyType}: players needed for full teams: ${playersNeeded}`);
-
-      if (playersNeeded > 0 && balanceService.hasMinimumPlayers(players.length)) {
-        // Post need players message with suggested teams
-        logMsg("debug", `${lobbyType}: posting "need players" message`);
-        const needEmbed = buildNeedPlayersEmbed(
-          lobbyType as LobbyType,
-          players.length,
-          playersNeeded,
-          teams
-        );
-
-        // Ping for more players
-        await channel.send({
-          content: pingRoleId
-            ? `<@&${pingRoleId}> - ${playersNeeded} more player(s) needed!`
-            : `${playersNeeded} more player(s) needed!`,
-          embeds: [needEmbed],
-        });
-        logMsg("debug", `${lobbyType}: "need players" message sent`);
-      } else if (balanceService.hasMinimumPlayers(players.length)) {
-        // Post balanced teams
-        logMsg("debug", `${lobbyType}: posting balanced teams`);
-        const teamsEmbed = buildBalancedTeamsEmbed(lobbyType as LobbyType, teams, event.title);
-        await channel.send({ embeds: [teamsEmbed] });
-        logMsg("debug", `${lobbyType}: balanced teams message sent`);
-      } else {
-        logMsg("debug", `${lobbyType}: not enough players for teams (minimum 2)`);
-      }
+      await channel.send(`**${event.title}** is starting now — no one signed up!`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logMsg("error", `Error processing ${lobbyType} lobby: ${errorMsg}`);
+      logMsg("error", `Failed to send "no signups" message: ${errorMsg}`);
+    }
+  } else {
+    for (const lobbyType of Object.values(LobbyTypes)) {
+      const players = signups[lobbyType as LobbyType];
+      if (players.length === 0) continue;
+
+      const lobbyName = LobbyConfig[lobbyType as LobbyType].name;
+      const mentions = players.map((id) => `<@${id}>`).join(" ");
+      let content = `${mentions} — **${lobbyName}** is starting!`;
+      if (event.startMessage) content += `\n${event.startMessage}`;
+
+      try {
+        await channel.send(content);
+        logMsg("debug", `Lobby ping sent for ${lobbyType} (${players.length} players)`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logMsg("error", `Failed to send lobby ping for ${lobbyType}: ${errorMsg}`);
+      }
+    }
+  }
+
+  // Send internal start message if configured
+  if (event.internalStartMessage && event.internalStartChannelId) {
+    logMsg("debug", `Sending internal start message to channel ${event.internalStartChannelId}`);
+    try {
+      const internalChannel = (await discordClient.channels.fetch(
+        event.internalStartChannelId
+      )) as TextChannel;
+      await internalChannel.send(event.internalStartMessage);
+      logMsg("debug", "Internal start message sent");
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logMsg("error", `Failed to send internal start message: ${errorMsg}`);
+    }
+  }
+
+  if (event.balanceTeams) {
+    // Get config for ping role (used for "need players" pings)
+    const pingRoleId =
+      event.pingRoleId || (await configService.getConfig(event.guildId))?.pingRoleId;
+    logMsg("debug", `Ping role for balance: ${pingRoleId || "none"}`);
+
+    // Balance and post teams for each lobby with players
+    for (const lobbyType of Object.values(LobbyTypes)) {
+      const players = signups[lobbyType as LobbyType];
+      if (players.length === 0) {
+        logMsg("debug", `${lobbyType} lobby: no players, skipping`);
+        continue;
+      }
+
+      logMsg("debug", `Processing ${lobbyType} lobby with ${players.length} players`);
+
+      try {
+        const config = LobbyConfig[lobbyType as LobbyType];
+        const teams = await balanceService.balanceTeams(players);
+        logMsg("debug", `${lobbyType} teams balanced successfully`);
+
+        // Check if we have enough/even players
+        const playersNeeded = balanceService.getPlayersNeeded(
+          players.length,
+          config.maxPlayersPerTeam
+        );
+        logMsg("debug", `${lobbyType}: players needed for full teams: ${playersNeeded}`);
+
+        if (playersNeeded > 0 && balanceService.hasMinimumPlayers(players.length)) {
+          // Post need players message with suggested teams
+          logMsg("debug", `${lobbyType}: posting "need players" message`);
+          const needEmbed = buildNeedPlayersEmbed(
+            lobbyType as LobbyType,
+            players.length,
+            playersNeeded,
+            teams
+          );
+
+          // Ping for more players
+          await channel.send({
+            content: pingRoleId
+              ? `<@&${pingRoleId}> - ${playersNeeded} more player(s) needed!`
+              : `${playersNeeded} more player(s) needed!`,
+            embeds: [needEmbed],
+          });
+          logMsg("debug", `${lobbyType}: "need players" message sent`);
+        } else if (balanceService.hasMinimumPlayers(players.length)) {
+          // Post balanced teams
+          logMsg("debug", `${lobbyType}: posting balanced teams`);
+          const teamsEmbed = buildBalancedTeamsEmbed(lobbyType as LobbyType, teams, event.title);
+          await channel.send({ embeds: [teamsEmbed] });
+          logMsg("debug", `${lobbyType}: balanced teams message sent`);
+        } else {
+          logMsg("debug", `${lobbyType}: not enough players for teams (minimum 2)`);
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logMsg("error", `Error processing ${lobbyType} lobby: ${errorMsg}`);
+      }
     }
   }
 

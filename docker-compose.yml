@@ -15,8 +15,8 @@ services:
     volumes:
       - bot-data:/app/data
     # Uncomment below if you want to use a .env file
-    # env_file:
-    #   - .env
+    env_file:
+      - .env
 
 volumes:
   bot-data:

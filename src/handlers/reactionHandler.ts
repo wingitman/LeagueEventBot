@@ -4,11 +4,16 @@ import {
   type User,
   type PartialUser,
 } from "discord.js";
-import { EMOJI_TO_LOBBY } from "../utils/constants.js";
+import { ARENA2_MAX_RANK_POINTS, buildEmojiToLobbyMap } from "../utils/constants.js";
 import { eventService } from "../services/event.service.js";
 import { playerService } from "../services/player.service.js";
-import { LobbyConfig, RankPoints, type LobbyType, EventStatus } from "../types/index.js";
-import { CASUAL_MAX_RANK_POINTS } from "../utils/constants.js";
+import {
+  LobbyConfig,
+  LobbyTypes,
+  RankPoints,
+  type LobbyType,
+  EventStatus,
+} from "../types/index.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("ReactionHandler");
@@ -34,18 +39,16 @@ export async function handleReactionAdd(
   const emoji = reaction.emoji.name;
   if (!emoji) return;
 
-  // Check if this is a lobby emoji
-  const lobbyType = EMOJI_TO_LOBBY[emoji];
-  if (!lobbyType) return;
-
   log.debug(`Reaction add: ${emoji} by user ${user.id} on message ${reaction.message.id}`);
 
   // Check if this message is an event embed
   const event = await eventService.getEventByMessageId(reaction.message.id);
-  if (!event) {
-    log.debug(`Message ${reaction.message.id} is not an event embed`);
-    return;
-  }
+  if (!event) return;
+
+  // Build per-event emoji map (respects per-event overrides) and resolve lobby
+  const emojiToLobby = buildEmojiToLobbyMap(event);
+  const lobbyType = emojiToLobby[emoji];
+  if (!lobbyType) return;
 
   log.debug(`Found event ${event.id} "${event.title}" for message ${reaction.message.id}`);
 
@@ -112,7 +115,7 @@ export async function handleReactionAdd(
   await eventService.switchLobby(event.id, user.id, lobbyType);
 
   // Remove reactions from other lobby emojis
-  await removeOtherLobbyReactions(reaction, user.id, emoji);
+  await removeOtherLobbyReactions(reaction, user.id, emoji, emojiToLobby);
 
   // Update the event embed
   await eventService.updateEventEmbed(event.id, reaction.message);
@@ -141,15 +144,16 @@ export async function handleReactionRemove(
   const emoji = reaction.emoji.name;
   if (!emoji) return;
 
-  // Check if this is a lobby emoji
-  const lobbyType = EMOJI_TO_LOBBY[emoji];
-  if (!lobbyType) return;
-
   log.debug(`Reaction remove: ${emoji} by user ${user.id} on message ${reaction.message.id}`);
 
   // Check if this message is an event embed
   const event = await eventService.getEventByMessageId(reaction.message.id);
   if (!event) return;
+
+  // Build per-event emoji map and resolve lobby type
+  const emojiToLobby = buildEmojiToLobbyMap(event);
+  const lobbyType = emojiToLobby[emoji];
+  if (!lobbyType) return;
 
   // Check if player is in this specific lobby
   const signup = await eventService.getSignup(event.id, user.id);
@@ -178,11 +182,11 @@ async function canPlayerJoinLobby(
     return { allowed: false, reason: "You are blocked from this lobby type." };
   }
 
-  // Check rank restrictions for casual lobby
-  if (lobbyType === "casual") {
+  // Check rank restrictions for arena2 lobby
+  if (lobbyType === LobbyTypes.ARENA2) {
     const rankPoints = RankPoints[player.rank as keyof typeof RankPoints] || 2;
 
-    if (rankPoints > CASUAL_MAX_RANK_POINTS && !player.whitelisted) {
+    if (rankPoints > ARENA2_MAX_RANK_POINTS && !player.whitelisted) {
       return {
         allowed: false,
         reason: `Your rank is too high for Casual lobbies. Only Gold+ and below can join (or whitelisted players).`,
@@ -196,12 +200,13 @@ async function canPlayerJoinLobby(
 async function removeOtherLobbyReactions(
   currentReaction: MessageReaction | PartialMessageReaction,
   userId: string,
-  currentEmoji: string
+  currentEmoji: string,
+  emojiToLobby: Record<string, string>
 ) {
   const message = currentReaction.message;
 
   for (const [emoji, reaction] of message.reactions.cache) {
-    if (emoji !== currentEmoji && EMOJI_TO_LOBBY[emoji]) {
+    if (emoji !== currentEmoji && emojiToLobby[emoji]) {
       try {
         await reaction.users.remove(userId);
       } catch (error) {

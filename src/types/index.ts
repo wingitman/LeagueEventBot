@@ -34,9 +34,9 @@ export const RankDisplayNames: Record<Rank, string> = {
 };
 
 export const LobbyTypes = {
-  COMPETITIVE: "competitive",
-  CASUAL: "casual",
-  OPEN: "open",
+  ARENA1: "arena1",
+  ARENA2: "arena2",
+  ARENA3: "arena3",
 } as const;
 
 export type LobbyType = (typeof LobbyTypes)[keyof typeof LobbyTypes];
@@ -51,26 +51,26 @@ export const LobbyConfig: Record<
     description: string;
   }
 > = {
-  [LobbyTypes.COMPETITIVE]: {
-    name: "Scrim 4v4",
-    emoji: "⚔️",
+  [LobbyTypes.ARENA1]: {
+    name: "Arena 1 - Competitive 4v4 locked",
+    emoji: "✅",
     maxPlayersPerTeam: 4,
-    maxRankPoints: null, // No restriction
-    description: "Competitive match",
+    maxRankPoints: null,
+    description: "Competitive matches for the pro players",
   },
-  [LobbyTypes.CASUAL]: {
-    name: "Chill 4v4",
-    emoji: "🎯",
-    maxPlayersPerTeam: 4,
-    maxRankPoints: 5, // Gold+ and below
-    description: "Casual match for the fun of everyone",
-  },
-  [LobbyTypes.OPEN]: {
-    name: "Open 5v5",
-    emoji: "🎪",
+  [LobbyTypes.ARENA2]: {
+    name: "Arena 2 - 5v5 Open",
+    emoji: "🥏",
     maxPlayersPerTeam: 5,
-    maxRankPoints: null, // No restriction
-    description: "LET CHAOS REIGN",
+    maxRankPoints: null,
+    description: "Casual matches for the fun of echo",
+  },
+  [LobbyTypes.ARENA3]: {
+    name: "Arena 3 - Team Scrims (Captain signup)",
+    emoji: "🎯",
+    maxPlayersPerTeam: 1,
+    maxRankPoints: null,
+    description: "Team Captains only",
   },
 };
 

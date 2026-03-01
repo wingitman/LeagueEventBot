@@ -11,9 +11,9 @@ const rankChoices = Object.entries(RankDisplayNames).map(([value, name]) => ({
 }));
 
 const lobbyChoices = [
-  { name: "Competitive", value: LobbyTypes.COMPETITIVE },
-  { name: "Casual", value: LobbyTypes.CASUAL },
-  { name: "Open", value: LobbyTypes.OPEN },
+  { name: "Arena 1", value: LobbyTypes.ARENA1 },
+  { name: "Arena 2", value: LobbyTypes.ARENA2 },
+  { name: "Arena 3", value: LobbyTypes.ARENA3 },
 ];
 
 export const playerCommand: Command = {
