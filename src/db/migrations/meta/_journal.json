@@ -29,6 +29,13 @@
       "when": 1772378433497,
       "tag": "0003_magical_the_twelve",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1772471362338,
+      "tag": "0004_curvy_squirrel_girl",
+      "breakpoints": true
     }
   ]
 }

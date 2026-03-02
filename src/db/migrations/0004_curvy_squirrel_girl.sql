@@ -1,0 +1,1 @@
+ALTER TABLE `events` ADD `player_role_id` text;

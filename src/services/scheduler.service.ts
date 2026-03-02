@@ -53,6 +53,31 @@ async function checkEventsToExpire() {
   }
 
   for (const event of eventsToExpire) {
+    // Remove player role from all signed-up players before expiring (if configured)
+    if (event.playerRoleId) {
+      const signups = await eventService.getEventSignups(event.id);
+      log.debug(
+        `Removing player role ${event.playerRoleId} from ${signups.length} player(s) for expired event ${event.id}`
+      );
+      try {
+        const guild = await discordClient.guilds.fetch(event.guildId);
+        for (const signup of signups) {
+          try {
+            const member = await guild.members.fetch(signup.discordId);
+            await member.roles.remove(event.playerRoleId);
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            log.warn(`Failed to remove player role from ${signup.discordId}: ${errorMsg}`);
+          }
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log.error(
+          `Failed to fetch guild to remove player roles for event ${event.id}: ${errorMsg}`
+        );
+      }
+    }
+
     await eventService.setEventStatus(event.id, EventStatus.COMPLETED);
     log.info(`Expired event ${event.id}: "${event.title}"`);
 
@@ -73,6 +98,7 @@ async function createNextInstance(expiredEvent: {
   title: string;
   cronSchedule: string | null;
   pingRoleId: string | null;
+  playerRoleId: string | null;
   balanceTeams: boolean;
   startMessage: string | null;
   internalStartMessage: string | null;
@@ -99,6 +125,7 @@ async function createNextInstance(expiredEvent: {
     isRecurring: true,
     cronSchedule: expiredEvent.cronSchedule,
     pingRoleId: expiredEvent.pingRoleId,
+    playerRoleId: expiredEvent.playerRoleId,
     balanceTeams: expiredEvent.balanceTeams,
     startMessage: expiredEvent.startMessage,
     internalStartMessage: expiredEvent.internalStartMessage,
@@ -155,6 +182,27 @@ async function startEvent(eventId: number, collector?: LogCollector) {
   // Get signups by lobby
   const signups = await eventService.getSignupsByLobby(eventId);
   const totalSignups = Object.values(signups).flat().length;
+
+  // Grant player role to all signed-up players (if configured)
+  if (event.playerRoleId) {
+    const allSignups = Object.values(signups).flat();
+    logMsg("debug", `Granting player role ${event.playerRoleId} to ${allSignups.length} player(s)`);
+    try {
+      const guild = await discordClient.guilds.fetch(event.guildId);
+      for (const discordId of allSignups) {
+        try {
+          const member = await guild.members.fetch(discordId);
+          await member.roles.add(event.playerRoleId);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          logMsg("warn", `Failed to grant player role to ${discordId}: ${errorMsg}`);
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logMsg("error", `Failed to fetch guild to grant player roles: ${errorMsg}`);
+    }
+  }
   logMsg("debug", `Signups retrieved: ${totalSignups} total players`);
   logMsg(
     "debug",
@@ -189,18 +237,27 @@ async function startEvent(eventId: number, collector?: LogCollector) {
       logMsg("error", `Failed to send "no signups" message: ${errorMsg}`);
     }
   } else if (event.balanceTeams !== true) {
+    const pingRoleId =
+      event.pingRoleId || (await configService.getConfig(event.guildId))?.pingRoleId;
+    logMsg("debug", `Ping role for non-balanced start: ${pingRoleId || "none"}`);
+
     for (const lobbyType of Object.values(LobbyTypes)) {
       const players = signups[lobbyType as LobbyType];
       if (players.length === 0) continue;
 
       const lobbyName = LobbyConfig[lobbyType as LobbyType].name;
       const mentions = players.map((id) => `<@${id}>`).join(" ");
-      let content = `${mentions} — **${lobbyName}** is starting!`;
+      const isOdd = players.length % 2 !== 0;
+      const pingPrefix = isOdd && pingRoleId ? `<@&${pingRoleId}> ` : "";
+      let content = `${pingPrefix}${mentions} — **${lobbyName}** is starting!`;
       if (event.startMessage) content += `\n${event.startMessage}`;
 
       try {
         await channel.send(content);
-        logMsg("debug", `Lobby ping sent for ${lobbyType} (${players.length} players)`);
+        logMsg(
+          "debug",
+          `Lobby ping sent for ${lobbyType} (${players.length} players${isOdd ? ", odd count — pinged role" : ""})`
+        );
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         logMsg("error", `Failed to send lobby ping for ${lobbyType}: ${errorMsg}`);
@@ -323,9 +380,9 @@ export async function triggerBalance(
   | null
   | { error: string }
   | {
-    teams: Awaited<ReturnType<typeof balanceService.balanceTeams>>;
-    event: NonNullable<Awaited<ReturnType<typeof eventService.getEvent>>>;
-  }
+      teams: Awaited<ReturnType<typeof balanceService.balanceTeams>>;
+      event: NonNullable<Awaited<ReturnType<typeof eventService.getEvent>>>;
+    }
 > {
   log.debug(`Triggering balance for event ${eventId}, lobby ${lobbyType}`);
 

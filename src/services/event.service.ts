@@ -28,6 +28,7 @@ export const eventService = {
     emojiArena1?: string | null;
     emojiArena2?: string | null;
     emojiArena3?: string | null;
+    playerRoleId?: string | null;
   }) {
     log.debug(`Creating event: "${data.title}" for guild ${data.guildId}`);
 
@@ -48,6 +49,7 @@ export const eventService = {
         emojiArena1: data.emojiArena1 ?? null,
         emojiArena2: data.emojiArena2 ?? null,
         emojiArena3: data.emojiArena3 ?? null,
+        playerRoleId: data.playerRoleId ?? null,
         status: EventStatus.PENDING,
         createdAt: new Date(),
         updatedAt: new Date(),

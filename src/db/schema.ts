@@ -41,6 +41,7 @@ export const events = sqliteTable("events", {
   balanceTeams: integer("balance_teams", { mode: "boolean" }).notNull().default(false),
   cronSchedule: text("cron_schedule"), // Only set if isRecurring is true
   pingRoleId: text("ping_role_id"), // Role to ping for this event
+  playerRoleId: text("player_role_id"), // Role granted to signed-up players on start, removed on end
   startMessage: text("start_message"), // Optional message appended to lobby pings when event starts
   internalStartMessage: text("internal_start_message"), // Optional message sent to internal channel on start
   internalStartChannelId: text("internal_start_channel_id"), // Channel for internalStartMessage

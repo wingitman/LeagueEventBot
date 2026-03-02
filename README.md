@@ -244,10 +244,12 @@ npm run format
 6. Go to "OAuth2" > "URL Generator"
 7. Select scopes: `bot`, `applications.commands`
 8. Select permissions:
+    Permission Integer: 275146435648b
    - Send Messages
    - Embed Links
    - Add Reactions
    - Manage Messages
+   - Add Roles
    - Read Message History
    - Use External Emojis
    - Use Slash Commands

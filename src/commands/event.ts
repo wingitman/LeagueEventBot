@@ -100,6 +100,14 @@ export const eventCommand: Command = {
             .setDescription("Override the reaction emoji for Arena 3 (e.g. <:myemoji:123>)")
             .setRequired(false)
         )
+        .addRoleOption((option) =>
+          option
+            .setName("player-role")
+            .setDescription(
+              "Role granted to all signed-up players when the event starts, removed when it ends"
+            )
+            .setRequired(false)
+        )
     )
     .addSubcommand((subcommand) =>
       subcommand
@@ -250,6 +258,32 @@ function parseTime(timeStr: string, dateStr?: string | null): Date {
   return targetDate;
 }
 
+/**
+ * Remove a player role from all signed-up players for an event.
+ * Silently ignores failures (member left server, missing permissions, etc.).
+ */
+async function removePlayerRoleFromSignups(
+  interaction: ChatInputCommandInteraction,
+  eventId: number,
+  playerRoleId: string
+) {
+  const signups = await eventService.getEventSignups(eventId);
+  if (signups.length === 0) return;
+  try {
+    const guild = await interaction.client.guilds.fetch(interaction.guildId!);
+    for (const signup of signups) {
+      try {
+        const member = await guild.members.fetch(signup.discordId);
+        await member.roles.remove(playerRoleId);
+      } catch {
+        // Member may have left the server — skip
+      }
+    }
+  } catch {
+    // Guild fetch failed — skip
+  }
+}
+
 async function handleCreate(interaction: ChatInputCommandInteraction) {
   const timeStr = interaction.options.getString("time", true);
   const title = interaction.options.getString("title") || "Game Night";
@@ -263,6 +297,7 @@ async function handleCreate(interaction: ChatInputCommandInteraction) {
   const emojiArena1 = interaction.options.getString("emoji-arena1");
   const emojiArena2 = interaction.options.getString("emoji-arena2");
   const emojiArena3 = interaction.options.getString("emoji-arena3");
+  const playerRole = interaction.options.getRole("player-role");
 
   // Validate recurring options
   if (recurring && !cronSchedule) {
@@ -310,6 +345,7 @@ async function handleCreate(interaction: ChatInputCommandInteraction) {
     emojiArena1,
     emojiArena2,
     emojiArena3,
+    playerRoleId: playerRole?.id ?? null,
   });
 
   // Post event embed
@@ -332,6 +368,12 @@ async function handleCreate(interaction: ChatInputCommandInteraction) {
 
 async function handleDelete(interaction: ChatInputCommandInteraction) {
   const eventId = interaction.options.getInteger("id", true);
+
+  // Fetch before deleting so we can remove player roles (deleteEvent cascades signups)
+  const eventToDelete = await eventService.getEvent(eventId);
+  if (eventToDelete?.playerRoleId) {
+    await removePlayerRoleFromSignups(interaction, eventId, eventToDelete.playerRoleId);
+  }
 
   const event = await eventService.deleteEvent(eventId, interaction.guildId!);
 
@@ -402,6 +444,11 @@ async function handleCancel(interaction: ChatInputCommandInteraction) {
     const embed = buildErrorEmbed("Event Not Found", `No event found with ID ${eventId}`);
     await interaction.reply({ embeds: [embed], ephemeral: true });
     return;
+  }
+
+  // Remove player role from all signed-up players before cancelling
+  if (event.playerRoleId) {
+    await removePlayerRoleFromSignups(interaction, eventId, event.playerRoleId);
   }
 
   // Cancel event (also sets isRecurring to false to stop future instances)
