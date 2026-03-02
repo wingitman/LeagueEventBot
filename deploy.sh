@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cho "Pulling latest changes..."
+echo "Pulling latest changes..."
 git pull
 
 echo "Installing dependencies..."
